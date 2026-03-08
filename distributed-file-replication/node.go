@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"sort"
 	"sync"
 )
@@ -36,7 +37,6 @@ func (n *Node) GetNextNeighbor() int {
 	for id := range n.Peers {
 		ids = append(ids, id)
 	}
-	// Sort IDs to define ring order
 	sort.Ints(ids)
 
 	for i, id := range ids {
@@ -46,6 +46,39 @@ func (n *Node) GetNextNeighbor() int {
 		}
 	}
 	return n.ID
+}
+
+func (n *Node) CallNextNeighbor(method string, args interface{}, reply interface{}) error {
+	
+	// Implementation of skip-over for failed neighbors
+	n.mu.RLock()
+	ids := []int{}
+	for id := range n.Peers {
+		ids = append(ids, id)
+	}
+	n.mu.RUnlock()
+	sort.Ints(ids)
+
+	myIdx := -1
+	for i, id := range ids {
+		if id == n.ID {
+			myIdx = i
+			break
+		}
+	}
+
+	for i := 1; i < len(ids); i++ {
+		targetIdx := (myIdx + i) % len(ids)
+		targetID := ids[targetIdx]
+		
+		err := n.CallPeer(targetID, method, args, reply)
+		if err == nil {
+			return nil
+		}
+		fmt.Println("Node", targetID, "is down, skipping to next neighbor...")
+	}
+
+	return fmt.Errorf("no alive neighbors found")
 }
 
 func NewNode(id int, port int, peers map[int]string) *Node {
